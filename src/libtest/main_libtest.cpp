@@ -1,14 +1,6 @@
 // ---------------------------------------------------------------------------
 // Env đối chứng - KHÔNG phải firmware thật.
-//
-// Chạy thư viện chính hãng "Sensirion I2C SGP41" thay cho driver tự viết, để
-// trả lời dứt điểm một câu: SGP41 không đo được là do code mình hay do con chip.
-//
 //   pio run -e libtest -t upload -t monitor
-//
-// So sánh mã lệnh thì hai bên giống hệt nhau (0x2612 + chờ 50 ms, 0x2619 + chờ
-// 50 ms, 0x280E + chờ 320 ms, 0x3682 + chờ 1 ms), nên nếu thư viện chính hãng
-// cũng hỏng đúng chỗ đó thì lỗi nằm ở phần cứng.
 // ---------------------------------------------------------------------------
 
 #include <Arduino.h>

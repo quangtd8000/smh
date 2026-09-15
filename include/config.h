@@ -1,13 +1,10 @@
 #pragma once
 
 // ---------------------------------------------------------------------------
-// Cờ bật/tắt từng module. Giá trị mặc định ở đây, platformio.ini ghi đè bằng
-// -D. Linh kiện chưa về -> để 0, firmware vẫn build và chạy bình thường.
+// Định danh thiết bị: CHỈ DÙNG DEVICE_UID (chuỗi trong DB backend).
+// Mọi topic đều dạng smart_home/<uid>/... — không còn topic home/<id>/device/<id>
+// nên không cần HOME_ID/DEVICE_ID/NODE_ID nữa.
 // ---------------------------------------------------------------------------
-
-#ifndef NODE_ID
-#define NODE_ID 0
-#endif
 
 #ifndef ENABLE_SHT31
 #define ENABLE_SHT31 1 // nhiệt độ - độ ẩm
@@ -22,7 +19,7 @@
 #endif
 
 #ifndef ENABLE_SPS30
-#define ENABLE_SPS30 0 // PM2.5 - CHƯA CÓ HÀNG
+#define ENABLE_SPS30 1 // PM2.5 - CHƯA CÓ HÀNG
 #endif
 
 #ifndef ENABLE_RELAY
@@ -76,11 +73,16 @@
 #endif
 
 // ---------------------------------------------------------------------------
-// Cấu hình Wi-Fi & EMQX MQTT Broker (Port 1883)
+// Cấu hình Wi-Fi & EMQX MQTT Broker (Port 8883 MQTTS TLS / Port 1883 TCP)
 // ---------------------------------------------------------------------------
 
 #ifndef ENABLE_WIFI
 #define ENABLE_WIFI 1
+#endif
+
+#ifndef ENABLE_MQTT_TLS
+#define ENABLE_MQTT_TLS                                                        \
+  0 // 1: Dùng MQTTS (TLS / SSL với Root CA), 0: Dùng TCP thường
 #endif
 
 #ifndef WIFI_SSID
@@ -91,20 +93,31 @@
 #define WIFI_PASS "0936265558"
 #endif
 
-// Cấu hình kết nối EMQX Broker (TCP Port 1883 Không Mã Hóa)
+// Cấu hình kết nối EMQX Broker
 #ifndef MQTT_BROKER
-#define MQTT_BROKER                                                            \
-  "192.168.1.28" // Hoặc IP EMQX Server local (vd: "192.168.1.100")
+#define MQTT_BROKER "192.168.1.35" // IP máy chủ EMQX / FastAPI Backend
 #endif
 
 #ifndef MQTT_PORT
-#define MQTT_PORT 1883 // Port 1883 chuẩn MQTT TCP
+#if ENABLE_MQTT_TLS
+#define MQTT_PORT 8883 // Port 8883 chuẩn MQTTS TLS bảo mật
+#else
+#define MQTT_PORT 1883 // Port 1883 chuẩn MQTT TCP không mã hóa
+#endif
 #endif
 
 #ifndef MQTT_USER
-#define MQTT_USER "" // Nếu EMQX bật Auth thì điền Username, ngược lại để rỗng
+#define MQTT_USER "inno" // Tài khoản xác thực MQTT trên EMQX
 #endif
 
 #ifndef MQTT_PASS
-#define MQTT_PASS "" // Nếu EMQX bật Auth thì điền Password, ngược lại để rỗng
+#define MQTT_PASS "inno123" // Mật khẩu xác thực MQTT trên EMQX
+#endif
+
+// UID định danh thiết bị.
+// ĐỂ RỖNG = suy tự động từ MAC của chip ("esp32-node-AABBCC") -> nạp cùng một
+// firmware cho mọi board, không cần sửa platformio.ini cho từng con (đây là
+// điều kiện để hệ thống scale). Chỉ đặt giá trị khi cần ghim UID cố định.
+#ifndef DEVICE_UID
+#define DEVICE_UID ""
 #endif

@@ -23,3 +23,4 @@ class Relay {
   bool _activeLow = true;
   bool _on = false;
 };
+

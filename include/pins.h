@@ -14,10 +14,12 @@
 #define PIN_I2C_SDA 8
 #define PIN_I2C_SCL 9
 
-// --- Relay AC ---
-// Module 2 kênh: đèn + quạt. Thêm kênh thì nối dài mảng trong relay_pins[].
+// --- Relay AC (3 kênh) ---
+// Module 3 kênh: Đèn (Kênh 1), Quạt (Kênh 2), Công tắc 3 (Kênh 3)
 #define PIN_RELAY_LIGHT 4
 #define PIN_RELAY_FAN 5
+#define PIN_RELAY_3 6
+
 
 // --- Phát hồng ngoại (VOKTTA 1W) ---
 // Chân này chỉ là tín hiệu điều khiển; LED công suất lấy nguồn riêng 5V.

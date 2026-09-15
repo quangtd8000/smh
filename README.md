@@ -15,7 +15,7 @@ Hệ thống Node giám sát môi trường không khí và điều khiển thi�
 | **Nhiệt độ & Độ ẩm** | SHT31 | 1 | I2C (`0x44`) | ✅ Hoạt động chuẩn xác (±0.2°C, ±2% RH) |
 | **Nồng độ CO2** | SCD41 | 1 | I2C (`0x62`) | ✅ Hoạt động tốt (NDIR, 400–5000 ppm) |
 | **TVOC & NOx (Đa khí)** | SGP41 | 1 | I2C (`0x59`) | ✅ Hoạt động hoàn hảo (Sensirion Algorithm) |
-| **Bụi mịn PM2.5 / PM10** | SPS30 | 1 | I2C (`0x69`) | ⏳ Dự phòng sẵn driver trong firmware |
+| **Bụi mịn PM2.5 / PM10** | SPS30 | 1 | I2C (`0x69scscan`) | ⏳ Dự phòng sẵn driver trong firmware |
 | **Bật/Tắt Đèn & Quạt AC** | Relay 2 Kênh | 1 | GPIO 4 & 5 | ✅ Kích đệm transistor / opto cách ly |
 | **Điều khiển Điều hòa** | IR Transmitter 1W | 1 | GPIO 17 (LEDC 38kHz) | ✅ Chuẩn xung NEC / Raw IR transmission |
 | **Vi điều khiển chính** | ESP32-S3-DevKitC-1 | 1 | Wi-Fi 2.4GHz | ✅ RAM 320KB, Flash 8MB, QD Mode |

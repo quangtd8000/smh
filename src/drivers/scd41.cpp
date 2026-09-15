@@ -40,7 +40,7 @@ bool Scd41::reinit() {
 
 bool Scd41::isDataReady(bool &ready) {
   if (!sensirion::sendCommand(*_bus, _addr, CMD_GET_DATA_READY)) return false;
-  delay(1);
+  delay(2);
 
   uint16_t status;
   if (!sensirion::readWords(*_bus, _addr, &status, 1)) return false;
@@ -52,7 +52,7 @@ bool Scd41::isDataReady(bool &ready) {
 
 bool Scd41::read(uint16_t &co2ppm, float &tempC, float &rh) {
   if (!sensirion::sendCommand(*_bus, _addr, CMD_READ_MEASUREMENT)) return false;
-  delay(1);
+  delay(2);
 
   uint16_t words[3];
   if (!sensirion::readWords(*_bus, _addr, words, 3)) return false;
