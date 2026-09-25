@@ -45,10 +45,8 @@ void NetMqtt::initDevice() {
 void NetMqtt::internalCallback(char *topic, byte *payload, unsigned int length) {
   if (!s_instance || !s_instance->_cmdCb) return;
 
-  // Payload lệnh IR từ backend dài 213 ký tự (tên ASCII) và tới 267-281 ký tự
-  // khi tên thiết bị/lệnh có dấu tiếng Việt (json.dumps escape \uXXXX) — buffer
-  // 256 cũ làm JSON bị cắt cụt tại tầng này trước cả callback ở main.cpp.
-  char msg[512];
+  // Hỗ trợ cả gói JSON chứa mảng raw_data IR (211 xung int chiếm ~1400-1600 bytes)
+  static char msg[2560];
   const size_t len = (length < sizeof(msg) - 1) ? length : (sizeof(msg) - 1);
   if (length >= sizeof(msg)) {
     Serial.printf("[NET] CANH BAO: payload MQTT %u ky tu > %u, bi cat bot!\n",
@@ -82,7 +80,7 @@ void NetMqtt::begin(const char *ssid, const char *password, const char *broker,
   // Cấu hình socket timeout 5000ms (5s) để đủ thời gian TCP handshake qua Wi-Fi
   _wifiClient.setTimeout(5000);
 #endif
-  _mqttClient.setBufferSize(2048);
+  _mqttClient.setBufferSize(2560);
 
   IPAddress brokerIp;
   if (brokerIp.fromString(_broker)) {

@@ -27,10 +27,15 @@ static void handleCommand(char *line);
 // JSON -> deserializeJson trả IncompleteInput nên lệnh bị bỏ IM LẶNG (lệnh
 // relay ngắn nên vẫn lọt, chỉ IR/thiết bị bị ảnh hưởng). 512 nằm gọn trong
 // MQTT buffer 2048 của PubSubClient.
-static constexpr size_t MQTT_CMD_BUF = 512;
+static constexpr size_t MQTT_CMD_BUF = 2560;
 
 static void onMqttCommand(const char *topic, const char *payload) {
-  Serial.printf("[MQTT RX] %s -> %s\n", topic, payload);
+  // Rút gọn log nếu payload quá dài (như mảng xung IR 211 phần tử) để tránh nghẽn UART
+  if (strlen(payload) > 120) {
+    Serial.printf("[MQTT RX] %s -> (Dai %u bytes)\n", topic, (unsigned)strlen(payload));
+  } else {
+    Serial.printf("[MQTT RX] %s -> %s\n", topic, payload);
+  }
 
   const size_t len = strlen(payload);
   if (len >= MQTT_CMD_BUF) {
@@ -39,9 +44,8 @@ static void onMqttCommand(const char *topic, const char *payload) {
     return;
   }
 
-  // handleCommand cần buffer mutable: ArduinoJson zero-copy trỏ thẳng key vào
-  // bộ đệm này thay vì copy từng chuỗi (tiết kiệm RAM cho StaticJsonDocument).
-  char cmdBuf[MQTT_CMD_BUF];
+  // Dùng static buffer để không tốn stack RAM của task loop
+  static char cmdBuf[MQTT_CMD_BUF];
   memcpy(cmdBuf, payload, len + 1);
   handleCommand(cmdBuf);
 }
@@ -1075,10 +1079,15 @@ static void handleCommand(char *line) {
 
   // 1. Xử lý gói tin JSON nhận từ MQTT / Backend / REST API
   if (line[0] == '{') {
-    StaticJsonDocument<384> doc;
+    // ArduinoJson v6 cần 16 bytes/phần tử mảng, 211 xung cần ~3.5KB pool
+    DynamicJsonDocument doc(6144);
     DeserializationError err = deserializeJson(doc, line);
-    if (!err) {
-      const char *cmd = doc["command"] | doc["type"] | doc["action"] | "";
+    if (err) {
+      Serial.printf("[JSON ERR] Giai ma JSON that bai: %s (payload %u bytes)\n",
+                    err.c_str(), (unsigned)strlen(line));
+      return;
+    }
+    const char *cmd = doc["command"] | doc["type"] | doc["action"] | "";
 
       // Xử lý lệnh Relay
 #if ENABLE_RELAY
@@ -1136,6 +1145,22 @@ static void handleCommand(char *line) {
       // Xử lý lệnh IR
 #if ENABLE_IR
       if (strcmp(cmd, "ir") == 0 || strcmp(cmd, "send_ir") == 0 || strcmp(cmd, "ir_send") == 0) {
+        // 1. Nếu có chuỗi xung thô raw_data (cho điều hòa, remote chuyên dụng)
+        if (doc.containsKey("raw_data") && doc["raw_data"].is<JsonArray>()) {
+          JsonArray rawArr = doc["raw_data"].as<JsonArray>();
+          size_t rawLen = rawArr.size();
+          if (rawLen > 0 && rawLen <= 512) {
+            static uint16_t pulses[512];
+            for (size_t i = 0; i < rawLen; i++) {
+              pulses[i] = rawArr[i];
+            }
+            irTx.sendRaw(pulses, rawLen);
+            Serial.printf("[CMD] IR TX RAW: Phat thanh cong %u xung IR!\n", (unsigned)rawLen);
+            return;
+          }
+        }
+
+        // 2. Mặc định phát chuẩn NEC (TV, quạt...)
         uint32_t addr = doc["address"] | 0;
         uint32_t code = doc["code"] | doc["command"] | 0x45;
         irTx.sendNec((uint8_t)addr, (uint8_t)code);
@@ -1160,8 +1185,8 @@ static void handleCommand(char *line) {
         handleCommand(nestedBuf);
         return;
       }
+      return;
     }
-  }
 
   // 2. Xử lý lệnh Text thông thường từ Serial Monitor
   char *cmd = strtok(line, " ");
