@@ -120,12 +120,27 @@ void BleProv::startBLE(const char *deviceName, ConfigReceivedCallback cb) {
   pService->start();
 
   NimBLEAdvertising *pAdvertising = NimBLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pAdvertising->start();
 
-  _bleActive = true;
-  Serial.println(F("[BLE] Dang quang ba (Advertising)... San sang cho Web ghep noi!"));
+  // Đặt Tên thiết bị vào gói quảng bá chính (Primary Advertisement Packet)
+  // để mọi máy quét đều thấy ngay lập tức mà không bị cắt bỏ do quá 31 bytes.
+  NimBLEAdvertisementData advData;
+  advData.setFlags(0x06); // General Discoverable Mode, BR/EDR Not Supported
+  advData.setName(deviceName);
+
+  // Đặt Service UUID vào gói Scan Response
+  NimBLEAdvertisementData scanData;
+  scanData.setCompleteServices(NimBLEUUID(SERVICE_UUID));
+
+  pAdvertising->setAdvertisementData(advData);
+  pAdvertising->setScanResponseData(scanData);
+
+  bool ok = pAdvertising->start();
+  if (ok) {
+    _bleActive = true;
+    Serial.printf("[BLE] Dang quang ba (Advertising) voi ten '%s'... San sang cho Web/App ghep noi!\n", deviceName);
+  } else {
+    Serial.println(F("[BLE] LOI: Khong the bat quang ba Bluetooth!"));
+  }
 }
 
 void BleProv::stopBLE() {

@@ -20,6 +20,35 @@ static bool ensureBus(uint8_t addr);
 static void handleCommand(char *line);
 
 #if ENABLE_WIFI
+// Payload lệnh từ backend dài hơn con số ước lượng ban đầu: send_ir_command
+// publish kèm command/ir_device/name/protocol/address/code/bits/repeats/
+// frequency/raw_data/extra_data -> 213 ký tự với tên ASCII, 267-281 ký tự khi
+// tên có dấu tiếng Việt (json.dumps escape \uXXXX). Buffer 128 cũ cắt cụt
+// JSON -> deserializeJson trả IncompleteInput nên lệnh bị bỏ IM LẶNG (lệnh
+// relay ngắn nên vẫn lọt, chỉ IR/thiết bị bị ảnh hưởng). 512 nằm gọn trong
+// MQTT buffer 2048 của PubSubClient.
+static constexpr size_t MQTT_CMD_BUF = 512;
+
+static void onMqttCommand(const char *topic, const char *payload) {
+  Serial.printf("[MQTT RX] %s -> %s\n", topic, payload);
+
+  const size_t len = strlen(payload);
+  if (len >= MQTT_CMD_BUF) {
+    Serial.printf("[MQTT RX] CANH BAO: payload %u ky tu > buffer %u - bo qua lenh!\n",
+                  (unsigned)len, (unsigned)MQTT_CMD_BUF);
+    return;
+  }
+
+  // handleCommand cần buffer mutable: ArduinoJson zero-copy trỏ thẳng key vào
+  // bộ đệm này thay vì copy từng chuỗi (tiết kiệm RAM cho StaticJsonDocument).
+  char cmdBuf[MQTT_CMD_BUF];
+  memcpy(cmdBuf, payload, len + 1);
+  handleCommand(cmdBuf);
+}
+#endif
+
+
+#if ENABLE_WIFI
 #include <ArduinoJson.h>
 #include "drivers/net_mqtt.h"
 #include "drivers/ble_prov.h"
@@ -739,6 +768,8 @@ void setup() {
 #endif
 
 #if ENABLE_WIFI
+  netMqtt.initDevice();
+
   String savedSsid, savedPass, savedBroker, savedUser, savedMqttPass, savedClaimToken;
   bool hasSavedWifi = bleProv.loadSavedConfig(savedSsid, savedPass, savedBroker, savedUser,
                                               savedMqttPass, savedClaimToken);
@@ -746,12 +777,6 @@ void setup() {
   if (s_claimToken.length() > 0) {
     Serial.printf("[init] Da co claim token trong NVS (%u ky tu)\n", (unsigned)s_claimToken.length());
   }
-
-  const char *useSsid = (hasSavedWifi && savedSsid.length() > 0) ? savedSsid.c_str() : WIFI_SSID;
-  const char *usePass = (hasSavedWifi && savedPass.length() > 0) ? savedPass.c_str() : WIFI_PASS;
-  const char *useBroker = (hasSavedWifi && savedBroker.length() > 0) ? savedBroker.c_str() : MQTT_BROKER;
-  const char *useUser = (hasSavedWifi && savedUser.length() > 0) ? savedUser.c_str() : MQTT_USER;
-  const char *useMqttPass = (hasSavedWifi && savedMqttPass.length() > 0) ? savedMqttPass.c_str() : MQTT_PASS;
 
   netMqtt.setStatusCallback([](const char *status, const char *ip) {
     if (strcmp(status, "connected") == 0) {
@@ -772,18 +797,6 @@ void setup() {
     }
   });
 
-  netMqtt.begin(useSsid, usePass, useBroker, MQTT_PORT, useUser, useMqttPass,
-               [](const char *topic, const char *payload) {
-                 Serial.printf("[MQTT RX] %s -> %s\n", topic, payload);
-                 char cmdBuf[128];
-                 strncpy(cmdBuf, payload, sizeof(cmdBuf) - 1);
-                 cmdBuf[sizeof(cmdBuf) - 1] = '\0';
-                 handleCommand(cmdBuf);
-               });
-
-  // In mã định danh duy nhất sau khi netMqtt.begin() đã chốt UID.
-  Serial.printf("  UID: %s\n", netMqtt.deviceUid());
-
   // Khởi động BLE Server với tên nhận diện thông minh (VD: SmartHome-Air-00001)
   char bleName[32];
 #if ENABLE_RELAY
@@ -803,6 +816,24 @@ void setup() {
     s_newClaimToken = newClaimToken ? newClaimToken : "";
     s_hasPendingBleConfig = true;
   });
+
+  // Bỏ kết nối Wi-Fi mặc định trước.
+  // Chỉ tự kết nối nếu TRƯỚC ĐÓ đã từng ghép nối qua Bluetooth và đã lưu cấu hình vào Flash NVS.
+  if (hasSavedWifi && savedSsid.length() > 0) {
+    const char *useBroker = (savedBroker.length() > 0) ? savedBroker.c_str() : MQTT_BROKER;
+    const char *useUser = (savedUser.length() > 0) ? savedUser.c_str() : MQTT_USER;
+    const char *useMqttPass = (savedMqttPass.length() > 0) ? savedMqttPass.c_str() : MQTT_PASS;
+    Serial.printf("[NET] Phat hien cau hinh Wi-Fi da luu tu Bluetooth: '%s'. Dang ket noi...\n", savedSsid.c_str());
+    netMqtt.begin(savedSsid.c_str(), savedPass.c_str(), useBroker, MQTT_PORT, useUser, useMqttPass,
+                 onMqttCommand);
+  } else {
+    Serial.println(F("[NET] Chua co cau hinh Wi-Fi. Bo qua ket noi Wi-Fi!"));
+    Serial.printf("[NET] ESP32 dang phat Bluetooth BLE ('%s').\n", bleName);
+    Serial.println(F("[NET] Vui long dung App/Web Bluetooth de ghep noi va nhap mat khau Wi-Fi."));
+  }
+
+  // In mã định danh duy nhất sau khi đã chốt UID.
+  Serial.printf("  UID: %s\n", netMqtt.deviceUid());
 #endif
 
   Serial.println();
@@ -1280,20 +1311,20 @@ void loop() {
 #if ENABLE_WIFI
   if (s_hasPendingBleConfig) {
     s_hasPendingBleConfig = false;
-    Serial.printf("[BLE] Ap dung cau hinh Wi-Fi moi tu Web: SSID='%s'...\n", s_newSsid.c_str());
+    Serial.printf("[BLE] Da ghep noi thanh cong! Nhan cau hinh Wi-Fi tu Bluetooth: SSID='%s'...\n", s_newSsid.c_str());
     // Token mới thay token cũ; rỗng thì giữ token đang có (không xoá oan).
     if (s_newClaimToken.length() > 0) {
       s_claimToken = s_newClaimToken;
       Serial.printf("[BLE] Da nhan claim token moi (%u ky tu)\n", (unsigned)s_claimToken.length());
     }
     bleProv.notifyStatus("connecting", "", netMqtt.deviceUid());
-    netMqtt.begin(s_newSsid.c_str(), s_newPass.c_str(), s_newBroker.c_str(), MQTT_PORT, s_newUser.c_str(), s_newMqttPass.c_str(),
-                 [](const char *topic, const char *payload) {
-                   char cmdBuf[128];
-                   strncpy(cmdBuf, payload, sizeof(cmdBuf) - 1);
-                   cmdBuf[sizeof(cmdBuf) - 1] = '\0';
-                   handleCommand(cmdBuf);
-                 });
+
+    const char *useBroker = (s_newBroker.length() > 0) ? s_newBroker.c_str() : MQTT_BROKER;
+    const char *useUser = (s_newUser.length() > 0) ? s_newUser.c_str() : MQTT_USER;
+    const char *useMqttPass = (s_newMqttPass.length() > 0) ? s_newMqttPass.c_str() : MQTT_PASS;
+
+    netMqtt.begin(s_newSsid.c_str(), s_newPass.c_str(), useBroker, MQTT_PORT, useUser, useMqttPass,
+                 onMqttCommand);
   }
   netMqtt.loop();
 #endif

@@ -8,30 +8,18 @@ static NetMqtt *s_instance = nullptr;
 
 NetMqtt::NetMqtt() : _mqttClient(_wifiClient) {
   s_instance = this;
+  _deviceUid[0] = '\0';
+  _clientId[0] = '\0';
+  _telemetryTopic[0] = '\0';
+  _cmdTopic[0] = '\0';
+  _stateTopic[0] = '\0';
+  _statusTopic[0] = '\0';
+  initDevice();
 }
 
-void NetMqtt::internalCallback(char *topic, byte *payload, unsigned int length) {
-  if (!s_instance || !s_instance->_cmdCb) return;
-
-  // Tạo string an toàn null-terminated cho payload
-  char msg[256];
-  const size_t len = (length < sizeof(msg) - 1) ? length : (sizeof(msg) - 1);
-  memcpy(msg, payload, len);
-  msg[len] = '\0';
-
-  s_instance->_cmdCb(topic, msg);
-}
-
-void NetMqtt::begin(const char *ssid, const char *password, const char *broker,
-                    uint16_t port, const char *user, const char *pass,
-                    CommandCallback cmdCb) {
-  _ssid = ssid ? ssid : "";
-  _password = password ? password : "";
-  _broker = broker ? broker : "";
-  _port = port;
-  _user = user ? user : "";
-  _pass = pass ? pass : "";
-  _cmdCb = cmdCb;
+void NetMqtt::initDevice() {
+  if (_deviceInitialized) return;
+  _deviceInitialized = true;
 
   // Lấy địa chỉ MAC của ESP32 (dự phòng khi DEVICE_UID rỗng)
   uint8_t mac[6];
@@ -52,6 +40,39 @@ void NetMqtt::begin(const char *ssid, const char *password, const char *broker,
   snprintf(_cmdTopic, sizeof(_cmdTopic), "smart_home/%s/command", _deviceUid);
   snprintf(_stateTopic, sizeof(_stateTopic), "smart_home/%s/state", _deviceUid);
   snprintf(_statusTopic, sizeof(_statusTopic), "smart_home/%s/status", _deviceUid);
+}
+
+void NetMqtt::internalCallback(char *topic, byte *payload, unsigned int length) {
+  if (!s_instance || !s_instance->_cmdCb) return;
+
+  // Payload lệnh IR từ backend dài 213 ký tự (tên ASCII) và tới 267-281 ký tự
+  // khi tên thiết bị/lệnh có dấu tiếng Việt (json.dumps escape \uXXXX) — buffer
+  // 256 cũ làm JSON bị cắt cụt tại tầng này trước cả callback ở main.cpp.
+  char msg[512];
+  const size_t len = (length < sizeof(msg) - 1) ? length : (sizeof(msg) - 1);
+  if (length >= sizeof(msg)) {
+    Serial.printf("[NET] CANH BAO: payload MQTT %u ky tu > %u, bi cat bot!\n",
+                  (unsigned)length, (unsigned)sizeof(msg));
+  }
+  memcpy(msg, payload, len);
+  msg[len] = '\0';
+
+  s_instance->_cmdCb(topic, msg);
+}
+
+void NetMqtt::begin(const char *ssid, const char *password, const char *broker,
+                    uint16_t port, const char *user, const char *pass,
+                    CommandCallback cmdCb) {
+  initDevice();
+  _started = true;
+
+  _ssid = ssid ? ssid : "";
+  _password = password ? password : "";
+  _broker = broker ? broker : "";
+  _port = port;
+  _user = user ? user : "";
+  _pass = pass ? pass : "";
+  _cmdCb = cmdCb;
 
 #if ENABLE_MQTT_TLS
   // Cấu hình chứng chỉ CA cho kết nối MQTTS TLS bảo mật
@@ -123,6 +144,8 @@ bool NetMqtt::connectMqtt() {
 }
 
 void NetMqtt::loop() {
+  if (!_started) return;
+
   const uint32_t now = millis();
 
   // Giới hạn tần suất kiểm tra WiFi.status() mỗi 500ms để không làm nghẽn wifi_task trên Core 0
@@ -189,7 +212,7 @@ void NetMqtt::loop() {
 }
 
 bool NetMqtt::isConnected() {
-  return (WiFi.status() == WL_CONNECTED) && _mqttClient.connected();
+  return _started && (WiFi.status() == WL_CONNECTED) && _mqttClient.connected();
 }
 
 bool NetMqtt::publishTelemetry(const char *jsonPayload) {

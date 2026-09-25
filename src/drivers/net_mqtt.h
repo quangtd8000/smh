@@ -26,6 +26,9 @@ class NetMqtt {
 
   NetMqtt();
 
+  // Khởi tạo Device UID và các MQTT Topics (có thể gọi trước begin)
+  void initDevice();
+
   void begin(const char *ssid, const char *password, const char *broker,
              uint16_t port = MQTT_PORT, const char *user = "", const char *pass = "",
              CommandCallback cmdCb = nullptr);
@@ -37,6 +40,7 @@ class NetMqtt {
   void loop();
 
   bool isConnected();
+  bool isStarted() const { return _started; }
 
   // Gửi số đo cảm biến (JSON payload) lên EMQX
   bool publishTelemetry(const char *jsonPayload);
@@ -66,6 +70,8 @@ class NetMqtt {
   uint32_t _wifiConnectStartTime = 0;
   bool _wifiConnectReported = false;
   bool _printedIp = false;
+  bool _started = false;
+  bool _deviceInitialized = false;
 
 #if ENABLE_MQTT_TLS
   WiFiClientSecure _wifiClient;
